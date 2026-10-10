@@ -1,0 +1,6 @@
+# 파이썬 캐시 (실행할 때마다 자동 생성, 컴퓨터/버전마다 다름)
+__pycache__/
+*.pyc
+
+# Jupyter 자동저장 사본
+.ipynb_checkpoints/
