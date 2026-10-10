@@ -111,3 +111,69 @@ def tmm_spectrum(wavelengths_nm, n_layers_of_lambda, d_layers_nm, n_incident_of_
         n_sub = n_substrate_of_lambda(lam)
         R[i], T[i], A[i] = tmm_normal_incidence(lam, n_layers, d_layers_nm, n_inc, n_sub)
     return R, T, A
+
+
+# =============================================================================
+# 3주차 추가: 비간섭(incoherent) 두꺼운 슬랩
+# =============================================================================
+def incoherent_slab(wavelength_nm, N_slab, d_slab_nm, n_incident, n_substrate,
+                    front_layers=(), front_d_nm=()):
+    """
+    두꺼운 흡수층(Si) 하나를 '비간섭'으로 다루는 수직입사 계산.
+
+    구조:  입사매질 | [앞면 코팅층들(coherent, 예: ARC)] | Si 슬랩(incoherent) | 기판(뒷면 매질)
+
+    왜 필요한가
+    -----------
+    coherent TMM(tmm_normal_incidence)은 Si 슬랩 안의 다중반사를 '진폭'으로 더해서
+    Fabry-Perot 간섭무늬(무늬 간격 ~ lambda^2/(2nd))가 생긴다. 실제 소자는 두께 불균일,
+    광원 선폭 때문에 이 무늬가 평균되어 사라진다. 여기서는 다중반사를 '세기'로 더해
+    무늬가 평균된 값을 바로 구한다. 얇은 ARC는 두께가 정밀하게 제어되므로 coherent 유지.
+
+    수식 (세기 기준 등비급수 합)
+    ---------------------------
+    x    = exp(-alpha*d),  alpha = 4*pi*k/lambda        (한 번 통과 시 남는 세기 비율)
+    R_f, T_f  : 입사매질 -> Si 방향 앞면(코팅 포함) 반사/투과율   [coherent TMM]
+    R_f2      : Si -> 입사매질 방향 앞면 반사율 (Si 안에서 위로 올라간 빛이 다시 내려올 비율)
+    R_b, T_b  : Si -> 기판 뒷면 계면 Fresnel 반사/투과율
+    D = 1 - R_f2 * R_b * x^2
+    R = R_f + T_f * T_f2 * R_b * x^2 / D
+    T = T_f * T_b * x / D
+    A_Si = T_f * (1 - x) * (1 + R_b * x) / D
+    코팅이 무손실이면 R + T + A_Si = 1.
+
+    근사 (근거)
+    ----------
+    계면 반사/투과율은 Si의 실수부 n만으로 계산한다. 800-1000nm에서 k/n <= ~2e-3
+    (Green 2008 데이터)이라 계면 반사율 오차는 ~1e-6 수준이고, 흡수는 x에서
+    k를 정확히 반영한다. 코팅층은 흡수가 있어도 되지만 그 경우 A_Si만 반환하므로
+    1-R-T 와 A_Si의 차이가 코팅 흡수다.
+
+    Returns
+    -------
+    R, T, A_Si : float
+    """
+    N_slab = complex(N_slab)
+    n_si = N_slab.real
+    k_si = -N_slab.imag  # 규약 N = n - ik
+    n0 = complex(n_incident)
+    ns = complex(n_substrate)
+
+    front_layers = list(front_layers)
+    front_d_nm = list(front_d_nm)
+
+    # 앞면: 입사매질 -> Si (coherent, 코팅 포함)
+    R_f, T_f, _ = tmm_normal_incidence(wavelength_nm, front_layers, front_d_nm, n0, n_si)
+    # 앞면: Si -> 입사매질 (코팅 순서를 뒤집어서 반대 방향으로)
+    R_f2, T_f2, _ = tmm_normal_incidence(wavelength_nm, front_layers[::-1], front_d_nm[::-1], n_si, n0)
+    # 뒷면: Si -> 기판
+    _, _, R_b, T_b = fresnel_single_interface(n_si, ns)
+
+    alpha = 4 * np.pi * k_si / wavelength_nm  # nm^-1
+    x = np.exp(-alpha * d_slab_nm)
+
+    D = 1.0 - R_f2 * R_b * x ** 2
+    R = R_f + T_f * T_f2 * R_b * x ** 2 / D
+    T = T_f * T_b * x / D
+    A_si = T_f * (1.0 - x) * (1.0 + R_b * x) / D
+    return float(R), float(T), float(A_si)
