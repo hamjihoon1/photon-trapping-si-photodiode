@@ -4,3 +4,8 @@ __pycache__/
 
 # Jupyter 자동저장 사본
 .ipynb_checkpoints/
+
+# 몇 초 만에 다시 만들 수 있는 계산 결과 데이터 (스크립트로 재생성)
+# - 그림(figures/)과 표(results/*.csv)는 GitHub에서 바로 보이도록 추적 유지
+# - 다시 만드는 데 오래 걸리는 FDTD 결과는 8주차에 별도 보관 규칙을 정함
+results/*.npz

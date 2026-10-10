@@ -16,7 +16,7 @@ ARC 두께: 940 nm에서 앞면 반사율이 최소가 되는 두께를 0.1 nm �
   - Beer-Lambert(반사 무시) 1-exp(-alpha d) : 코팅X 참고값
 
 출력:
-  results/week3_thickness_sweep.npz   스펙트럼 원본 + 메타데이터
+  results/week3_thickness_sweep.npz   스펙트럼 원본 + 메타데이터 (git 미추적: 이 스크립트로 약 5초면 재생성)
   results/week3_940nm_table.csv       940 nm 흡수율 표
   figures/fig_week3_thickness_sweep.png
 """
