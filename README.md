@@ -10,9 +10,10 @@ TMM + FDTD 시뮬레이션으로 분석하는 15주 학부연구 프로젝트입
 
 ## 진행 상황
 - [x] 1주차: 환경 세팅, Si 흡수계수 베이스라인 계산
-- [ ] 2주차: TMM 구현
-- [ ] 3주차: 베이스라인 정량화
-- [ ] 4-7주차: FDTD(MEEP) 입문 및 문헌 재현
+- [x] 2주차: TMM 구현 (해석해·에너지보존 검증)
+- [x] 3주차: 베이스라인 정량화 (두께 스윕, SiO2 ARC, Fig.1)
+- [x] 4주차: MEEP 설치, 1D Si 슬랩 MEEP–TMM 일치 검증 (`scripts/validate_meep_1d.py`)
+- [ ] 5-7주차: 2D/3D FDTD 및 문헌 재현
 - [ ] 8-11주차: 파라미터 스윕
 - [ ] 12-13주차: 무질서 배열 비교
 - [ ] 14-15주차: 정리 및 발표
@@ -20,6 +21,7 @@ TMM + FDTD 시뮬레이션으로 분석하는 15주 학부연구 프로젝트입
 ## 환경
 - Python 3.11 (Miniconda, 가상환경명: photontrap)
 - NumPy, Matplotlib, SciPy, JupyterLab
+- MEEP (pymeep): Windows 미지원 → WSL2 + conda 별도 환경 (`notes/04_meep_install_wsl2.md`)
 
 ## 지도교수
 이도언 교수 (한양대학교 ERICA 전자공학부)
