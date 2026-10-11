@@ -9,3 +9,7 @@ __pycache__/
 # - 그림(figures/)과 표(results/*.csv)는 GitHub에서 바로 보이도록 추적 유지
 # - 다시 만드는 데 오래 걸리는 FDTD 결과는 8주차에 별도 보관 규칙을 정함
 results/*.npz
+
+# --quick 동작 확인용 저해상도 결과 (최종 결과 아님)
+*_quick.csv
+*_quick.png

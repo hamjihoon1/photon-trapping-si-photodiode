@@ -22,6 +22,7 @@ validate_meep_1d.py — 4주차: MEEP 1D Si 슬랩 R/T/A ↔ coherent TMM 비교
   results/week4_meep_convergence.csv     파트 A 해상도별 오차
   results/week4_meep_vs_tmm_2um.csv      파트 B 파장별 MEEP/TMM R,T,A
   figures/fig_week4_meep_vs_tmm.png
+  (--quick 은 같은 이름 끝에 _quick 을 붙여 따로 저장 — git 미추적)
 
 실행 (photontrap 환경, MEEP 설치 후):
   python scripts/validate_meep_1d.py            # 전체 (파트 B 해상도 800, 2 nm 간격: 수 분~10분)
@@ -163,7 +164,7 @@ def make_figure(lam, out, conv, res_b, path):
     ax2.text(LAM_TARGET + 3, ax2.get_ylim()[1] * 0.96,
              f"940 nm\nMEEP {100*out[j,2]:.3f}%\nTMM  {100*out[j,5]:.3f}%",
              color=ink, fontsize=8.5, va="top")
-    ax2.set(xlabel="파장 (nm)", ylabel="흡수율 A = 1 − R − T (%)", xlim=(LAM_MIN, LAM_MAX))
+    ax2.set(xlabel="파장 (nm)", ylabel="흡수율 A = 1 - R - T (%)", xlim=(LAM_MIN, LAM_MAX))
     ax2.set_title("(b) 흡수 스펙트럼 (실제 Si 분산, Green 2008)", loc="left", color=ink)
     ax2.grid(axis="y", color=grid, lw=0.8)
     ax2.legend(frameon=False, fontsize=8.5, loc="upper right", bbox_to_anchor=(1.0, 0.80))
@@ -174,7 +175,7 @@ def make_figure(lam, out, conv, res_b, path):
         e = np.array([r[key] for r in conv])
         ax3.loglog(res, e, color=c, lw=1.6, marker="o", ms=4, label=lab)
     e0 = conv[0]["max_abs_dR"]
-    ax3.loglog(res, e0 * (res[0] / res) ** 2, color=muted, lw=1, ls="--", label="기울기 −2 (Yee 2차)")
+    ax3.loglog(res, e0 * (res[0] / res) ** 2, color=muted, lw=1, ls="--", label="기울기 -2 (Yee 2차)")
     ax3.axhline(TOL_RT, color=c_R, lw=0.8, ls=":")
     ax3.axhline(TOL_A, color=c_A, lw=0.8, ls=":")
     ax3.set_xticks(res)
@@ -239,11 +240,13 @@ def main():
 
     os.makedirs(os.path.join(ROOT, "results"), exist_ok=True)
     os.makedirs(os.path.join(ROOT, "figures"), exist_ok=True)
-    write_csv(os.path.join(ROOT, "results", "week4_meep_convergence.csv"), conv, list(conv[-1].keys()))
+    # --quick 결과는 git 이 추적하는 최종 결과(기본 실행)를 덮어쓰지 않도록 _quick 이름으로 따로 저장
+    sfx = "_quick" if args.quick else ""
+    write_csv(os.path.join(ROOT, "results", f"week4_meep_convergence{sfx}.csv"), conv, list(conv[-1].keys()))
     rows_b = [{"wavelength_nm": l, "R_meep": o[0], "T_meep": o[1], "A_meep": o[2],
                "R_tmm": o[3], "T_tmm": o[4], "A_tmm": o[5]} for l, o in zip(lam, out)]
-    write_csv(os.path.join(ROOT, "results", "week4_meep_vs_tmm_2um.csv"), rows_b, list(rows_b[0].keys()))
-    make_figure(lam, out, conv, res_b, os.path.join(ROOT, "figures", "fig_week4_meep_vs_tmm.png"))
+    write_csv(os.path.join(ROOT, "results", f"week4_meep_vs_tmm_2um{sfx}.csv"), rows_b, list(rows_b[0].keys()))
+    make_figure(lam, out, conv, res_b, os.path.join(ROOT, "figures", f"fig_week4_meep_vs_tmm{sfx}.png"))
 
     checks = {
         # 수렴 차수는 res ≥ 100 구간만 판정 (2026-10-10 첫 실행 후 수정).
