@@ -20,7 +20,14 @@ import matplotlib.font_manager as fm
 import glob
 for _p in glob.glob("/usr/share/fonts/truetype/nanum/NanumGothic*.ttf"):
     fm.fontManager.addfont(_p)
-plt.rcParams["font.family"] = "NanumGothic"
+# 한글 폰트: Windows=맑은 고딕, 없으면 나눔/Noto CJK/Mac 순으로 탐색 (sweep_thickness.py와 같은 방식)
+# 예전에는 NanumGothic으로 고정해서, 나눔 폰트가 없는 Windows에서 한글이 □로 깨졌다.
+_names = {f.name for f in fm.fontManager.ttflist}
+for _fam in ("Malgun Gothic", "NanumGothic", "Noto Sans CJK KR", "Noto Sans CJK", "AppleGothic"):
+    _hit = sorted(n for n in _names if n.startswith(_fam))
+    if _hit:
+        plt.rcParams["font.family"] = _hit[0]
+        break
 plt.rcParams["axes.unicode_minus"] = False
 
 from tmm import tmm_normal_incidence
