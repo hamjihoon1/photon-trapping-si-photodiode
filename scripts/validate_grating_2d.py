@@ -65,14 +65,21 @@ def tmm_flat(si, lam_nm):
     return R, T, A
 
 
-def run_point(period, f, h, lam_nm, res, si, dpml=1.0, freqs=None):
-    """한 파장(lam_nm)의 재료로 그레이팅 한 번 계산 → 그 파장의 (R, T, A)."""
-    if freqs is None:
-        freqs = np.array([1000.0 / lam_nm])
+def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0):
+    """
+    파장 배열 lams_nm 각각에 대해 (R, T, A) 를 계산해 (len(lams_nm), 3) 배열로 돌려준다.
+    - 정규화 런은 주파수 배열당 한 번만 돈다 (LamellarGrating2D.normalize 캐시). 파장마다 다시 돌리지 않는다.
+    - 파장마다 재료만 바꿔 본 런을 돌리고, 그 파장의 값(인덱스 i)만 읽는다 (validate_meep_1d.py 파트 B와 같은 방식).
+    """
+    lams_nm = np.asarray(lams_nm, dtype=float)
+    freqs = 1000.0 / lams_nm
     g = LamellarGrating2D(period, f, h, T_UM, freqs, res, dpml_um=dpml)
-    mat = medium_from_N(si.N(lam_nm), lam_nm / 1000.0)
-    R, T, A = g.rta(mat)
-    return float(R[0]), float(T[0]), float(A[0])
+    out = np.zeros((len(lams_nm), 3))
+    for i, l in enumerate(lams_nm):
+        mat = medium_from_N(si.N(l), l / 1000.0)
+        R, T, A = g.rta(mat)
+        out[i] = R[i], T[i], A[i]
+    return out
 
 
 def check_flat(si, res_list, lam_list):
@@ -80,9 +87,10 @@ def check_flat(si, res_list, lam_list):
     rows = []
     for res in res_list:
         t0 = time.time()
+        flat = rta_sweep(LAM_CONV, 1.0, 0.0, lam_list, res, si)
         errs = []
-        for lam in lam_list:
-            R, T, A = run_point(LAM_CONV, 1.0, 0.0, lam, res, si)
+        for k, lam in enumerate(lam_list):
+            R, T, A = flat[k]
             Rt, Tt, At = tmm_flat(si, lam)
             errs.append((abs(R - Rt), abs(T - Tt), abs(A - At)))
         e = np.array(errs)
@@ -99,7 +107,7 @@ def check_convergence(si, res_list):
     rows = []
     for res in res_list:
         t0 = time.time()
-        R, T, A = run_point(LAM_CONV, F_SI, H_UM, LAM_TARGET, res, si)
+        R, T, A = rta_sweep(LAM_CONV, F_SI, H_UM, [LAM_TARGET], res, si)[0]
         rows.append({"test": "resolution", "resolution_per_um": res, "dpml_um": 1.0,
                      "R": R, "T": T, "A": A, "runtime_s": round(time.time() - t0, 1)})
         print(f"  res {res:4d}: R {100*R:.3f}%  T {100*T:.3f}%  A {100*A:.4f}%  ({rows[-1]['runtime_s']} s)")
@@ -111,7 +119,7 @@ def check_pml(si, res):
     rows = []
     for dpml in (1.0, 2.0):
         t0 = time.time()
-        R, T, A = run_point(LAM_CONV, F_SI, H_UM, LAM_TARGET, res, si, dpml=dpml)
+        R, T, A = rta_sweep(LAM_CONV, F_SI, H_UM, [LAM_TARGET], res, si, dpml=dpml)[0]
         rows.append({"test": "pml", "resolution_per_um": res, "dpml_um": dpml,
                      "R": R, "T": T, "A": A, "runtime_s": round(time.time() - t0, 1)})
         print(f"  dpml {dpml:.1f} μm: R {100*R:.4f}%  T {100*T:.4f}%  A {100*A:.4f}%")
@@ -126,19 +134,25 @@ def spectrum(si, periods, res, step_nm):
     if LAM_TARGET not in lam:
         lam = np.sort(np.append(lam, LAM_TARGET))
     rows = []
+    # 평면 Si 기준선: 같은 셀·해상도에서 한 번만 계산 (f=1, h=0 이라 주기 P 와 무관한 결과)
+    print(f"\n[스펙트럼 기준선] 평면 Si (MEEP), res {res}, {len(lam)} 점")
+    t0 = time.time()
+    flat = rta_sweep(periods[0], 1.0, 0.0, lam, res, si)
+    print(f"  완료 ({time.time()-t0:.0f} s)")
     for P in periods:
         print(f"\n[스펙트럼] Λ = {P} μm, f = {F_SI}, h = {H_UM} μm, res {res}, {len(lam)} 점")
         t0 = time.time()
+        grat = rta_sweep(P, F_SI, H_UM, lam, res, si)
+        print(f"  완료 ({time.time()-t0:.0f} s)")
         for i, l in enumerate(lam):
-            R, T, A = run_point(P, F_SI, H_UM, l, res, si)
-            Rf, Tf, Af = run_point(P, 1.0, 0.0, l, res, si)   # 같은 셀·해상도의 평면 Si (MEEP 기준선)
+            R, T, A = grat[i]
+            Af = flat[i, 2]
             At = tmm_flat(si, l)[2]
             rows.append({"period_um": P, "lambda_nm": l, "R": R, "T": T, "A": A,
                          "A_flat_meep": Af, "A_flat_tmm": At,
                          "enhancement": A / Af if Af > 0 else float("nan")})
-            if i % max(1, len(lam) // 8) == 0:
-                print(f"  {l:7.1f} nm: A grating {100*A:.3f}%  flat(MEEP) {100*Af:.3f}%  "
-                      f"flat(TMM) {100*At:.3f}%  ({i+1}/{len(lam)}, {time.time()-t0:.0f} s)")
+        k = int(np.argmin(np.abs(lam - LAM_TARGET)))
+        print(f"  940 nm: A grating {100*grat[k,2]:.3f}%  flat(MEEP) {100*flat[k,2]:.3f}%")
     return rows
 
 
@@ -205,7 +219,8 @@ def main():
     si = SiOpticalConstants(verbose=False)
     sfx = "_quick" if args.quick else ""
     if args.quick:
-        res_flat, res_conv, res_spec, periods, step = [100], [100, 200], 100, [LAM_CONV], 20.0
+        # quick: 체크 1 판정은 해상도 200 이상으로 본다 (1D 결과상 해상도 100 은 기준 미달이 정상)
+        res_flat, res_conv, res_spec, periods, step = [100, 200], [100, 200], 200, [LAM_CONV], 20.0
         lam_flat = [800.0, 940.0, 1000.0]
     else:
         res_flat, res_conv, res_spec, periods, step = [100, 200, 400], [100, 200, 400], 200, [0.7, 0.85, 1.0], 10.0
