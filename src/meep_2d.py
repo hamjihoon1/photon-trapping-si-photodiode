@@ -3,19 +3,22 @@ meep_2d.py — 5주차: 2D 라멜라(선형 홈) 그레이팅의 수직입사 R/
 
 계획서 5주차: "2D 주기 구조 — 그레이팅 흡수 스펙트럼 + 수렴 테스트 그래프"
 
-=== 구조 (x–z 평면, y 방향은 무한히 균일) ===
-  z 위쪽: 공기
-  Si 필름: 두께 t (z ∈ [−t/2, t/2]), 윗면에 폭 w = (1−f)·Λ, 깊이 h 인 공기 홈이 주기 Λ 로 반복
+=== 좌표 규약 (중요) ===
+  MEEP 의 dimensions=2 는 xy 평면 시뮬레이션이다. 세 번째 축(z)은 불변 방향이다.
+  이 코드는 물리적으로 "x = 주기 방향, z = 전파 방향(깊이)" 으로 생각한다.
+  따라서 아래의 z 좌표는 모두 MEEP 의 y 좌표로 들어간다 (_pt(x, z) = Vector3(x, z, 0)).
+  셀 크기는 Vector3(Λ, L, 0), PML 방향은 mp.Y.
+  (처음 버전은 (Λ, 0, L) 로 넣어서 전파 방향 길이가 버려졌고, 입사 플럭스가 0 이 되었다 — 2026-11-03 수정)
+
+=== 구조 (x–z 평면, 홈은 불변 방향으로 무한히 뻗음) ===
+  위쪽: 공기 / Si 필름: 두께 t (z ∈ [−t/2, t/2]), 윗면에 폭 w = (1−f)·Λ, 깊이 h 인 공기 홈이 주기 Λ 로 반복
   f = Si 점유율(fill fraction).  f = 1 이고 h = 0 이면 평면 필름 → 1D 슬랩(meep_1d.py)과 같아야 함
   → 이것이 이 모듈의 첫 번째 검증 (validate_grating_2d.py 의 '평면 환원' 체크)
 
-  ※ 2D 홈 그레이팅은 계획서의 "원기둥 나노홀"(3D)로 가는 중간 단계다. 홈은 x 방향으로만 주기적이다.
-
 === 경계·광원·모니터 ===
-  x : 주기 경계 (MEEP 기본값: PML 을 두지 않은 방향은 주기). 수직입사이므로 Bloch k_x = 0
-  z : PML(dpml) 양쪽. 광원은 면 광원(size = Λ) 으로 x 전체에 같은 위상의 평면파를 만든다
-  모니터: 플럭스 영역을 x 전체 주기(size = Λ)로 잡는다 → 회절된 모든 차수의 합이 자동으로 들어간다.
-          (Λ < λ 이면 공기 중 ±1차 이상은 evanescent 라 0차만 전파; Λ > λ 이면 전파 차수가 생김)
+  x : 주기 경계 (PML 을 두지 않은 방향은 MEEP 에서 주기). 수직입사이므로 Bloch k_x = 0
+  z : PML(dpml) 양쪽 (MEEP 에서는 y 방향 PML). 광원은 면 광원(size = Λ) 으로 x 전체에 같은 위상의 평면파
+  모니터: 플럭스 영역을 x 전체 주기(size = Λ)로 잡는다 → 전파하는 모든 회절 차수의 합이 들어간다.
 
 === 계산 방식 (1D 와 동일한 MEEP 표준 R/T 절차) ===
   1) 정규화 런: 구조 없이 같은 셀 → 입사 플럭스, 반사 모니터의 입사장 DFT 저장
@@ -25,12 +28,11 @@ meep_2d.py — 5주차: 2D 라멜라(선형 홈) 그레이팅의 수직입사 R/
 
 === 재료 ===
   Si: 1D 와 같은 medium_from_N (파장 한 점에서 맞춘 ε_∞ + D_conductivity). 파장마다 따로 계산한다.
-  넓은 대역을 한 번에 돌리는 Lorentz 피팅은 아직 없음 (진행 노트 6절 7번).
   홈 안은 mp.air.
 
-=== 주의 (미검증 항목) ===
-  이 파일은 Claude 작업 환경에 MEEP 이 없어 실행 검증을 하지 못했다 (conda-forge 접속 불가).
-  사용자 WSL2 환경에서 validate_grating_2d.py 의 '평면 환원' 체크를 먼저 통과시켜야 한다.
+=== 검증 상태 ===
+  Claude 작업 환경에는 MEEP 이 없어 실행하지 못했다. 사용자 WSL2 에서 validate_grating_2d.py 의
+  '평면 환원' 체크(체크 1)를 먼저 통과시켜야 한다. 가짜 meep 으로는 좌표 오류를 잡을 수 없다.
 """
 import numpy as np
 import meep as mp
@@ -48,14 +50,13 @@ class LamellarGrating2D:
     film_um     : Si 필름 두께 t [μm]
     freqs       : 플럭스를 기록할 MEEP 주파수 배열 (= 1/λ[μm])
     resolution  : 1 μm 당 격자점 수
-    dpml_um     : z 방향 PML 두께 [μm]. 5주차 PML 2배 테스트를 위해 바꿔 쓸 수 있게 열어둠
+    dpml_um     : 전파 방향 PML 두께 [μm]. 5주차 PML 2배 테스트에서 바꿔 쓴다
     pad_um      : 구조와 PML 사이 공기 두께 [μm] (소스·모니터가 이 안에 들어감)
     decay_tol   : stop_when_fields_decayed 의 기준 (1D 와 같은 1e-9)
-    max_time    : 안전장치: 최대 시뮬레이션 시간 (MEEP 단위, a=1μm). 공진이 강해 필드가 안 죽을 때 무한정 돌지 않도록
     """
 
     def __init__(self, period_um, si_fill, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, decay_tol=1e-9, max_time=2000.0):
+                 dpml_um=1.0, pad_um=1.0, decay_tol=1e-9):
         if not (0.0 < si_fill <= 1.0):
             raise ValueError(f"si_fill = {si_fill} 는 (0, 1] 범위여야 합니다.")
         if depth_um < 0 or depth_um >= film_um:
@@ -69,9 +70,9 @@ class LamellarGrating2D:
         self.dpml = float(dpml_um)
         self.pad = float(pad_um)
         self.decay_tol = decay_tol
-        self.max_time = max_time
 
-        self.L = 2 * self.dpml + 2 * self.pad + self.t          # z 방향 셀 길이
+        # 전파 방향(우리 z = MEEP y) 셀 길이
+        self.L = 2 * self.dpml + 2 * self.pad + self.t
         self.z_src = -self.L / 2 + self.dpml + 0.1 * self.pad
         self.z_refl = -self.t / 2 - 0.5 * self.pad
         self.z_tran = +self.t / 2 + 0.5 * self.pad
@@ -84,46 +85,53 @@ class LamellarGrating2D:
         self._norm = None
 
     # -------------------------------------------------------------------------
+    @staticmethod
+    def _pt(x, z):
+        """우리 좌표 (x, z) → MEEP 2D 좌표 (x, y=z, 0)."""
+        return mp.Vector3(x, z, 0)
+
     def geometry(self, material):
         """Si 필름(material) + 윗면 공기 홈. 나중에 쓴 객체가 앞의 것을 덮는다."""
         if material is None:
             return []
-        geom = [mp.Block(size=mp.Vector3(mp.inf, mp.inf, self.t),
-                         center=mp.Vector3(), material=material)]
+        geom = [mp.Block(size=mp.Vector3(mp.inf, self.t, mp.inf),
+                         center=self._pt(0, 0), material=material)]
         if self.h > 0 and self.f < 1.0:
             w = (1.0 - self.f) * self.P
-            # 홈 위쪽으로 0.2 μm 더 뻗게 해서 필름 윗면과 면이 딱 겹치는 것을 피한다
-            ext = 0.2
-            geom.append(mp.Block(size=mp.Vector3(w, mp.inf, self.h + ext),
-                                 center=mp.Vector3(0, 0, self.t / 2 - self.h / 2 + ext / 2),
+            ext = 0.2   # 홈을 필름 위로 0.2 μm 더 뻗게 해서 윗면과 면이 겹치지 않게 한다
+            geom.append(mp.Block(size=mp.Vector3(w, self.h + ext, mp.inf),
+                                 center=self._pt(0, self.t / 2 - self.h / 2 + ext / 2),
                                  material=mp.air))
         return geom
 
     def _build(self, material):
         sources = [mp.Source(mp.GaussianSource(self.fcen, fwidth=self.fwidth),
                              component=mp.Ex,
-                             center=mp.Vector3(0, 0, self.z_src),
+                             center=self._pt(0, self.z_src),
                              size=mp.Vector3(self.P, 0, 0))]
-        sim = mp.Simulation(cell_size=mp.Vector3(self.P, 0, self.L), dimensions=2,
+        sim = mp.Simulation(cell_size=mp.Vector3(self.P, self.L, 0), dimensions=2,
                             resolution=self.res,
-                            boundary_layers=[mp.PML(self.dpml, direction=mp.Z)],
+                            boundary_layers=[mp.PML(self.dpml, direction=mp.Y)],
                             sources=sources, geometry=self.geometry(material))
-        refl = sim.add_flux(self.freqs, mp.FluxRegion(center=mp.Vector3(0, 0, self.z_refl),
+        refl = sim.add_flux(self.freqs, mp.FluxRegion(center=self._pt(0, self.z_refl),
                                                       size=mp.Vector3(self.P, 0, 0)))
-        tran = sim.add_flux(self.freqs, mp.FluxRegion(center=mp.Vector3(0, 0, self.z_tran),
+        tran = sim.add_flux(self.freqs, mp.FluxRegion(center=self._pt(0, self.z_tran),
                                                       size=mp.Vector3(self.P, 0, 0)))
         return sim, refl, tran
 
     def _run(self, sim):
         sim.run(until_after_sources=mp.stop_when_fields_decayed(
-            20, mp.Ex, mp.Vector3(0, 0, self.z_probe), self.decay_tol))
+            20, mp.Ex, self._pt(0, self.z_probe), self.decay_tol))
 
     # -------------------------------------------------------------------------
     def normalize(self):
         if self._norm is None:
             sim, refl, tran = self._build(None)
             self._run(sim)
-            self._norm = (np.array(mp.get_fluxes(tran)), sim.get_flux_data(refl))
+            inc = np.array(mp.get_fluxes(tran))
+            if np.any(inc <= 0):
+                raise RuntimeError(f"정규화 입사 플럭스가 0 이하입니다: {inc}. 셀 크기·소스 위치를 확인하세요.")
+            self._norm = (inc, sim.get_flux_data(refl))
             sim.reset_meep()
         return self._norm
 
@@ -137,8 +145,3 @@ class LamellarGrating2D:
         T = np.array(mp.get_fluxes(tran)) / inc
         sim.reset_meep()
         return R, T, 1.0 - R - T
-
-
-def si_medium_at(N_tmm_value: complex, wavelength_nm: float):
-    """nm 단위 입력을 받는 얇은 래퍼 (스크립트에서 편하게 쓰도록)."""
-    return medium_from_N(N_tmm_value, wavelength_nm / 1000.0)
