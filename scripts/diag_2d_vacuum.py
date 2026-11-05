@@ -14,7 +14,7 @@ diag_2d_vacuum.py — 진단용 (5주차 발산 원인 찾기). 재료·홈 없�
 import numpy as np
 import meep as mp
 
-P, L, RES = 0.8, 6.0, 50
+P, L, RES = 0.8, 6.0, 100
 Z_SRC, Y_PROBE = -1.9, 1.5
 
 
@@ -25,8 +25,8 @@ def run(size_x, label):
                         boundary_layers=[mp.PML(1.0, direction=mp.Y)], sources=[src])
     probe = mp.Vector3(0, Y_PROBE, 0)
     print(f"\n[{label}] size_x = {size_x}")
-    for _ in range(8):
-        sim.run(until=5)
+    for _ in range(10):
+        sim.run(until=20)
         v = sim.get_field_point(mp.Ex, probe)
         print(f"  t = {sim.meep_time():7.2f}   |Ex(probe)| = {abs(v):.3e}")
 
