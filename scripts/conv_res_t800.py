@@ -16,11 +16,13 @@ conv_res_t800.py — 5주차 체크 2: 그레이팅 A 의 해상도 수렴 (시�
 
 결과: results/week5_conv_res_t800.csv (git 추적 안 함)
 재시작: 이미 CSV 에 있는 조건은 건너뛴다. 중간에 멈춰도 같은 명령으로 이어서 돈다.
-실행 (WSL2, photontrap-meep, 총 수 시간 예상 — 해상도 400 이 대부분을 차지):
+먼저 스모크 테스트 (해상도 100 한 점, 수 분 예상 — 설정 확인용):
+  python -u scripts/conv_res_t800.py --smoke 2>&1 | tee /mnt/c/projects/conv_res_t800_smoke.txt
+전체 실행 (WSL2, photontrap-meep, 총 수 시간 예상 — 해상도 400 이 대부분을 차지):
   python -u scripts/conv_res_t800.py 2>&1 | tee /mnt/c/projects/conv_res_t800_log.txt
 
-※ 이 파일은 Claude 작업 환경에 MEEP 이 없어 실행하지 못했다. 사용자 WSL 에서 처음 돌릴 때는
-  해상도 100 한 점만 먼저 확인하는 것을 권한다 (RESES 를 [100] 으로 줄여서 실행).
+※ 이 파일은 Claude 작업 환경에 MEEP 이 없어 실행하지 못했다. 그래서 전체 실행 전에 --smoke 로
+  해상도 100 한 점을 먼저 확인한다.
 """
 import csv
 import os
@@ -102,9 +104,13 @@ def main():
     freqs = np.array([1000.0 / LAM])
 
     # (라벨, 해상도, 구조 f, 구조 h, PML 두께)
-    cases = [("grating", r, F, H, 1.0) for r in RESES]
-    cases.append(("grating_pml2", 200, F, H, 2.0))
-    cases.append(("flat", 200, 1.0, 0.0, 1.0))
+    if "--smoke" in sys.argv:
+        # 스모크 테스트: 해상도 100 그레이팅 한 점만 (전체 실행 전 설정 확인용)
+        cases = [("grating", 100, F, H, 1.0)]
+    else:
+        cases = [("grating", r, F, H, 1.0) for r in RESES]
+        cases.append(("grating_pml2", 200, F, H, 2.0))
+        cases.append(("flat", 200, 1.0, 0.0, 1.0))
 
     done, rows = load_done()
     t_all = time.time()
