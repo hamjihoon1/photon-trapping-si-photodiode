@@ -65,15 +65,17 @@ def tmm_flat(si, lam_nm):
     return R, T, A
 
 
-def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0):
+def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0, t_cap=800.0):
     """
     파장 배열 lams_nm 각각에 대해 (R, T, A) 를 계산해 (len(lams_nm), 3) 배열로 돌려준다.
     - 정규화 런은 주파수 배열당 한 번만 돈다 (LamellarGrating2D.normalize 캐시). 파장마다 다시 돌리지 않는다.
     - 파장마다 재료만 바꿔 본 런을 돌리고, 그 파장의 값(인덱스 i)만 읽는다 (validate_meep_1d.py 파트 B와 같은 방식).
+    - t_cap 기본값 800: 5주차 시간 상한 확정값 (conv_time_diag 에서 800 과 1600 이 같음, 2026-11-05).
+      LamellarGrating2D 의 기본값 200 은 쓰지 않는다 (잘못된 흡수값이 나온다).
     """
     lams_nm = np.asarray(lams_nm, dtype=float)
     freqs = 1000.0 / lams_nm
-    g = LamellarGrating2D(period, f, h, T_UM, freqs, res, dpml_um=dpml)
+    g = LamellarGrating2D(period, f, h, T_UM, freqs, res, dpml_um=dpml, t_cap=t_cap)
     out = np.zeros((len(lams_nm), 3))
     for i, l in enumerate(lams_nm):
         mat = medium_from_N(si.N(l), l / 1000.0)
