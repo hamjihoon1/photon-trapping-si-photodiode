@@ -38,11 +38,11 @@ class NanoHoleCell3D:
     resolution  : 1 μm 당 격자점 수
     dpml_um     : z 방향 PML 두께 [μm]
     pad_um      : 구조와 PML 사이 공기 두께 [μm]
-    decay_tol   : stop_when_fields_decayed 기준
+    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위). 2D 와 같은 고정 시간 방식 (2026-11-05 수정)
     """
 
     def __init__(self, period_um, radius_um, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, decay_tol=1e-9):
+                 dpml_um=1.0, pad_um=1.0, t_cap=200.0):
         if depth_um < 0 or depth_um >= film_um:
             raise ValueError("홀 깊이는 0 이상이고 필름 두께보다 작아야 합니다.")
         if radius_um < 0 or 2 * radius_um > period_um:
@@ -55,7 +55,7 @@ class NanoHoleCell3D:
         self.res = resolution
         self.dpml = float(dpml_um)
         self.pad = float(pad_um)
-        self.decay_tol = decay_tol
+        self.t_cap = float(t_cap)
 
         self.L = 2 * self.dpml + 2 * self.pad + self.t
         self.z_src = -self.L / 2 + self.dpml + 0.1 * self.pad
@@ -97,8 +97,8 @@ class NanoHoleCell3D:
         return sim, refl, tran
 
     def _run(self, sim):
-        sim.run(until_after_sources=mp.stop_when_fields_decayed(
-            20, mp.Ex, mp.Vector3(0, 0, self.z_probe), self.decay_tol))
+        # 고정 시간 방식 (meep_2d.py 와 동일한 이유로 변경)
+        sim.run(until_after_sources=self.t_cap)
 
     def normalize(self):
         if self._norm is None:
