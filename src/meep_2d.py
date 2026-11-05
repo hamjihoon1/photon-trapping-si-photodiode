@@ -52,11 +52,11 @@ class LamellarGrating2D:
     resolution  : 1 μm 당 격자점 수
     dpml_um     : 전파 방향 PML 두께 [μm]. 5주차 PML 2배 테스트에서 바꿔 쓴다
     pad_um      : 구조와 PML 사이 공기 두께 [μm] (소스·모니터가 이 안에 들어감)
-    decay_tol   : stop_when_fields_decayed 의 기준 (1D 와 같은 1e-9)
+    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위, a=1μm). 이 시간까지만 돈다
     """
 
     def __init__(self, period_um, si_fill, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, decay_tol=1e-9):
+                 dpml_um=1.0, pad_um=1.0, t_cap=200.0):
         if not (0.0 < si_fill <= 1.0):
             raise ValueError(f"si_fill = {si_fill} 는 (0, 1] 범위여야 합니다.")
         if depth_um < 0 or depth_um >= film_um:
@@ -69,7 +69,7 @@ class LamellarGrating2D:
         self.res = resolution
         self.dpml = float(dpml_um)
         self.pad = float(pad_um)
-        self.decay_tol = decay_tol
+        self.t_cap = float(t_cap)
 
         # 전파 방향(우리 z = MEEP y) 셀 길이
         self.L = 2 * self.dpml + 2 * self.pad + self.t
@@ -120,8 +120,10 @@ class LamellarGrating2D:
         return sim, refl, tran
 
     def _run(self, sim):
-        sim.run(until_after_sources=mp.stop_when_fields_decayed(
-            20, mp.Ex, self._pt(0, self.z_probe), self.decay_tol))
+        # 고정 시간 방식: 소스가 꺼진 뒤 t_cap 만큼만 계산한다.
+        # 이전의 stop_when_fields_decayed(1e-9)는 빈 셀에서도 기준에 도달하지 못해 계산이 끝나지 않았다
+        # (2026-11-05 진단: 빈 셀은 t=200 까지 안정적, 잔류 필드 ~1e-8).
+        sim.run(until_after_sources=self.t_cap)
 
     # -------------------------------------------------------------------------
     def normalize(self):
