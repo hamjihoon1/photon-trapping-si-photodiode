@@ -11,6 +11,7 @@ nanohole_3d.py — 6주차: 3D 원기둥 나노홀 단위셀 첫 흡수 스펙�
                           해상도를 올릴 때 차이가 줄어드는지로 판정 (2026-11-06: res 20 9.4%p, 30 0.26%p)
   --conv 20 30 40 ...   : 940 nm 해상도별 R/T/A + 잔류 에너지 비율 + 시간 (대칭 사용)
   --spectrum RES        : 800–1000 nm 20 nm 간격 그레이팅 스펙트럼 (대칭 사용). --lams 로 일부만 (병렬 실행)
+  --broadband RES       : Si 구간별 분산 재료(data/si_broadband_fit.json)로 구간당 한 번 실행, 2 nm 간격 (--bands 0 1 2 3)
   평면 기준선은 작은 셀(P = 4/res, 6주차 체크 1b)로 같은 해상도에서 계산
 
 출력 (git 미추적): results/week6_nanohole_{symcheck|conv|spectrum}[_tag].csv
@@ -130,6 +131,38 @@ def spectrum(si, res, lams):
     return rows
 
 
+def broadband(res, band_ids, nfreq=26):
+    """
+    넓은 대역 모드: Si 를 구간별 분산 재료(data/si_broadband_fit.json)로 넣고 구간당 한 번 실행.
+    구간당 nfreq 주파수 (기본 26 = 2 nm 간격). 평면 기준선도 같은 재료·해상도로 작은 셀에서 한 번.
+    """
+    import json
+    from si_broadband import meep_medium
+    with open(os.path.join(ROOT, "data", "si_broadband_fit.json"), encoding="utf-8") as fh:
+        bands = json.load(fh)["bands"]
+    si = SiOpticalConstants(verbose=False)
+    rows = []
+    for bi in band_ids:
+        b = bands[bi]
+        b["poles"] = [tuple(p) for p in b["poles"]]
+        lam = np.linspace(b["work_nm"][0], b["work_nm"][1], nfreq)
+        mat = meep_medium(b)
+        t0 = time.time()
+        c = NanoHoleCell3D(P_UM, R_UM, H_UM, T_UM, 1000.0 / lam, res, t_cap=T_CAP, use_symmetry=True)
+        R, T, A = c.rta(mat)
+        t1 = time.time()
+        cf = NanoHoleCell3D(4.0 / res, 0.0, 0.0, T_UM, 1000.0 / lam, res, t_cap=T_CAP)
+        Af = cf.rta(mat)[2]
+        At = np.array([tmm_normal_incidence(l, [si.N(l)], [T_UM * 1000.0], 1.0, 1.0)[2] for l in lam])
+        for i, l in enumerate(lam):
+            rows.append({"mode": "broadband", "resolution": res, "band": bi, "lambda_nm": l,
+                         "R": R[i], "T": T[i], "A": A[i], "A_flat_meep": Af[i], "A_flat_tmm": At[i],
+                         "runtime_s": round(t1 - t0, 1)})
+        print(f"  res {res} 구간 {b['work_nm'][0]:.0f}–{b['work_nm'][1]:.0f} nm: 평균 A {100*A.mean():.2f}%  "
+              f"평면 MEEP {100*Af.mean():.2f}% (TMM {100*At.mean():.2f}%)  ({t1-t0:.0f} s)", flush=True)
+    return rows
+
+
 def write_csv(name, rows):
     path = os.path.join(ROOT, "results", name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -150,6 +183,8 @@ def main():
     ap.add_argument("--conv", type=int, nargs="+")
     ap.add_argument("--spectrum", type=int, help="스펙트럼 해상도")
     ap.add_argument("--lams", type=float, nargs="+", default=None)
+    ap.add_argument("--broadband", type=int, help="넓은 대역 모드 해상도 (구간당 1회 실행)")
+    ap.add_argument("--bands", type=int, nargs="+", default=[0, 1, 2, 3], help="--broadband 구간 번호 (0: 800–850 … 3: 950–1000)")
     ap.add_argument("--tag", default="")
     a = ap.parse_args()
     si = SiOpticalConstants(verbose=False)
@@ -160,6 +195,8 @@ def main():
         write_csv(f"week6_nanohole_symcheck_res{a.symcheck}{tag}.csv", symcheck(si, a.symcheck, which))
     if a.conv:
         write_csv(f"week6_nanohole_conv{tag}.csv", conv(si, a.conv))
+    if a.broadband:
+        write_csv(f"week6_nanohole_broadband_res{a.broadband}{tag}.csv", broadband(a.broadband, a.bands))
     if a.spectrum:
         lams = a.lams or list(np.arange(800.0, 1000.0 + 1e-9, 20.0))
         write_csv(f"week6_nanohole_spectrum_res{a.spectrum}{tag}.csv", spectrum(si, a.spectrum, lams))
