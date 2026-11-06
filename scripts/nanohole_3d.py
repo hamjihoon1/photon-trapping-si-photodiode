@@ -131,7 +131,7 @@ def spectrum(si, res, lams):
     return rows
 
 
-def broadband(res, band_ids, nfreq=26):
+def broadband(res, band_ids, nfreq=26, dpml=1.0):
     """
     넓은 대역 모드: Si 를 구간별 분산 재료(data/si_broadband_fit.json)로 넣고 구간당 한 번 실행.
     구간당 nfreq 주파수 (기본 26 = 2 nm 간격). 평면 기준선도 같은 재료·해상도로 작은 셀에서 한 번.
@@ -148,17 +148,17 @@ def broadband(res, band_ids, nfreq=26):
         lam = np.linspace(b["work_nm"][0], b["work_nm"][1], nfreq)
         mat = meep_medium(b)
         t0 = time.time()
-        c = NanoHoleCell3D(P_UM, R_UM, H_UM, T_UM, 1000.0 / lam, res, t_cap=T_CAP, use_symmetry=True)
+        c = NanoHoleCell3D(P_UM, R_UM, H_UM, T_UM, 1000.0 / lam, res, dpml_um=dpml, t_cap=T_CAP, use_symmetry=True)
         R, T, A = c.rta(mat)
         t1 = time.time()
         cf = NanoHoleCell3D(4.0 / res, 0.0, 0.0, T_UM, 1000.0 / lam, res, t_cap=T_CAP)
         Af = cf.rta(mat)[2]
         At = np.array([tmm_normal_incidence(l, [si.N(l)], [T_UM * 1000.0], 1.0, 1.0)[2] for l in lam])
         for i, l in enumerate(lam):
-            rows.append({"mode": "broadband", "resolution": res, "band": bi, "lambda_nm": l,
+            rows.append({"mode": "broadband", "resolution": res, "band": bi, "nfreq": nfreq, "dpml_um": dpml, "lambda_nm": l,
                          "R": R[i], "T": T[i], "A": A[i], "A_flat_meep": Af[i], "A_flat_tmm": At[i],
                          "runtime_s": round(t1 - t0, 1)})
-        print(f"  res {res} 구간 {b['work_nm'][0]:.0f}–{b['work_nm'][1]:.0f} nm: 평균 A {100*A.mean():.2f}%  "
+        print(f"  res {res} 구간 {b['work_nm'][0]:.0f}–{b['work_nm'][1]:.0f} nm (nfreq {nfreq}, PML {dpml} μm): 평균 A {100*A.mean():.2f}%  "
               f"평면 MEEP {100*Af.mean():.2f}% (TMM {100*At.mean():.2f}%)  ({t1-t0:.0f} s)", flush=True)
     return rows
 
@@ -185,6 +185,8 @@ def main():
     ap.add_argument("--lams", type=float, nargs="+", default=None)
     ap.add_argument("--broadband", type=int, help="넓은 대역 모드 해상도 (구간당 1회 실행)")
     ap.add_argument("--bands", type=int, nargs="+", default=[0, 1, 2, 3], help="--broadband 구간 번호 (0: 800–850 … 3: 950–1000)")
+    ap.add_argument("--nfreq", type=int, default=26, help="--broadband 구간당 주파수 수 (26 = 2 nm, 101 = 0.5 nm)")
+    ap.add_argument("--dpml", type=float, default=1.0, help="--broadband z 방향 PML 두께 [μm] (PML 2배 테스트용)")
     ap.add_argument("--tag", default="")
     a = ap.parse_args()
     si = SiOpticalConstants(verbose=False)
@@ -196,7 +198,10 @@ def main():
     if a.conv:
         write_csv(f"week6_nanohole_conv{tag}.csv", conv(si, a.conv))
     if a.broadband:
-        write_csv(f"week6_nanohole_broadband_res{a.broadband}{tag}.csv", broadband(a.broadband, a.bands))
+        name = f"week6_nanohole_broadband_res{a.broadband}"
+        if a.nfreq != 26 or a.dpml != 1.0:   # 기본 조건이 아닌 실행은 파일을 따로 (plot_nanohole_3d_broadband.py 가 섞지 않게)
+            name = f"week6_nanohole_bbtest_res{a.broadband}_nf{a.nfreq}_pml{a.dpml:g}"
+        write_csv(f"{name}{tag}.csv", broadband(a.broadband, a.bands, nfreq=a.nfreq, dpml=a.dpml))
     if a.spectrum:
         lams = a.lams or list(np.arange(800.0, 1000.0 + 1e-9, 20.0))
         write_csv(f"week6_nanohole_spectrum_res{a.spectrum}{tag}.csv", spectrum(si, a.spectrum, lams))
