@@ -1,8 +1,15 @@
 """
 meep_3d.py — 6주차: 얇은 Si 슬랩 위 원기둥 나노홀 단위셀의 수직입사 R/T/A (MEEP, 3D)
 
-⚠ 초안 (미실행). Claude 작업 환경에 MEEP 이 없어 실행하지 못했다.
-   사용자 WSL2 에서 평면 환원 체크(홀 반경 0 → 평면 Si 와 같아야 함)를 먼저 통과시켜야 한다.
+검증 상태 (2026-11-06, Claude 환경 MEEP 1.35.0, scripts/validate_nanohole_3d_flat.py):
+  - 평면 환원(r = 0) vs TMM, 940 nm: 해상도 100/200/400 = −0.204/−0.057/−0.014 %p (2차 수렴) → 통과
+    5파장(800–1000 nm) 최대 오차는 해상도 100/200 = 2.22/0.59 %p (1D·2D 와 같은 이산화 오차)
+  - 같은 해상도의 2D 평면(meep_2d.py)과 R, T 차이 < 1e-7
+  - 단위셀 크기 무관성: P = 0.2 vs 1.0 μm 차이 6e-15
+  - 홀 기하(ε 분포): 홀 구간 Si 면적비 0.595 (기대 0.615, 해상도 40 계단 근사), 바닥 꽉 참
+  - 수정 이력: k_point 누락 → 금속벽 경계로 계산되던 문제 수정 (아래 _build)
+  ※ 홀 위치: 현재 홀은 z = +t/2 면, 광원은 −z 쪽 → 빛은 홀 없는 면으로 들어온다. 실제 소자(Gao 2017)처럼
+    홀 면으로 빛을 넣으려면 방향을 바꿔야 한다 (진행 노트 8절 열린 질문).
 
 === 좌표 규약 ===
   MEEP 3D: 좌표 (x, y, z). z 가 전파 방향이다 (2D 와 달리 z 가 전파 방향이 맞다).
@@ -38,11 +45,11 @@ class NanoHoleCell3D:
     resolution  : 1 μm 당 격자점 수
     dpml_um     : z 방향 PML 두께 [μm]
     pad_um      : 구조와 PML 사이 공기 두께 [μm]
-    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위). 2D 와 같은 고정 시간 방식 (2026-11-05 수정)
+    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위). 2D 와 같은 고정 시간 방식. 기본값 800 = 진행 노트 확정값 (2026-11-06)
     """
 
     def __init__(self, period_um, radius_um, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, t_cap=200.0):
+                 dpml_um=1.0, pad_um=1.0, t_cap=800.0):
         if depth_um < 0 or depth_um >= film_um:
             raise ValueError("홀 깊이는 0 이상이고 필름 두께보다 작아야 합니다.")
         if radius_um < 0 or 2 * radius_um > period_um:
@@ -86,8 +93,10 @@ class NanoHoleCell3D:
                              component=mp.Ex,
                              center=mp.Vector3(0, 0, self.z_src),
                              size=mp.Vector3(self.P, self.P, 0))]
+        # k_point = 0 → x, y 를 Bloch 주기 경계(수직입사)로 만든다. 이것을 빼면 MEEP 기본값(k_point=False)이
+        # 금속벽(PEC)이라 y 벽에서 Ex 가 0 으로 강제되고, 평면파 대신 도파관 모드가 생긴다 (2026-11-06 체크 1b 에서 발견).
         sim = mp.Simulation(cell_size=mp.Vector3(self.P, self.P, self.L), dimensions=3,
-                            resolution=self.res,
+                            resolution=self.res, k_point=mp.Vector3(0, 0, 0),
                             boundary_layers=[mp.PML(self.dpml, direction=mp.Z)],
                             sources=sources, geometry=self.geometry(material))
         refl = sim.add_flux(self.freqs, mp.FluxRegion(center=mp.Vector3(0, 0, self.z_refl),
