@@ -47,13 +47,20 @@ class NanoHoleCell3D:
     pad_um      : 구조와 PML 사이 공기 두께 [μm]
     t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위). 2D 와 같은 고정 시간 방식. 기본값 800 = 진행 노트 확정값 (2026-11-06)
     hole_side   : "source" (홀이 광원 쪽 면 z = −t/2, 기본값) 또는 "back" (광원 반대편 면 z = +t/2)
+    use_symmetry: True 면 x·y 거울 대칭으로 셀 1/4 만 계산 (약 4배 빠름).
+                  Ex 편광 수직입사 + 홀이 단위셀 중심 원기둥일 때만 성립:
+                  Ex 는 x 거울에 대해 홀함수(phase −1), y 거울에 대해 짝함수(phase +1).
+                  근거: MEEP 대칭 규칙 (doc/docs/Exploiting_Symmetry.md) — 소스 성분이 거울면에 수직이면 phase −1.
+                  MEEP 튜토리얼 Mie 산란(Ez 소스)도 Mirror(Z, −1), Mirror(Y, +1) 을 쓴다. 최종 근거는 수치 비교.
+                  대칭 없는 계산과 같은 값이 나오는지 확인 후 사용 (scripts/nanohole_3d.py --symcheck)
     """
 
     def __init__(self, period_um, radius_um, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, t_cap=800.0, hole_side="source"):
+                 dpml_um=1.0, pad_um=1.0, t_cap=800.0, hole_side="source", use_symmetry=False):
         if hole_side not in ("source", "back"):
             raise ValueError(f"hole_side = {hole_side!r} 는 'source' 또는 'back' 이어야 합니다.")
         self.side = hole_side
+        self.sym = bool(use_symmetry)
         if depth_um < 0 or depth_um >= film_um:
             raise ValueError("홀 깊이는 0 이상이고 필름 두께보다 작아야 합니다.")
         if radius_um < 0 or 2 * radius_um > period_um:
@@ -103,6 +110,8 @@ class NanoHoleCell3D:
         sim = mp.Simulation(cell_size=mp.Vector3(self.P, self.P, self.L), dimensions=3,
                             resolution=self.res, k_point=mp.Vector3(0, 0, 0),
                             boundary_layers=[mp.PML(self.dpml, direction=mp.Z)],
+                            symmetries=([mp.Mirror(mp.X, phase=-1), mp.Mirror(mp.Y, phase=+1)]
+                                        if self.sym else []),
                             sources=sources, geometry=self.geometry(material))
         refl = sim.add_flux(self.freqs, mp.FluxRegion(center=mp.Vector3(0, 0, self.z_refl),
                                                       size=mp.Vector3(self.P, self.P, 0)))
