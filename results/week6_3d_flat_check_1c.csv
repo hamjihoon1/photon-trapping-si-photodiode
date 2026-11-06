@@ -1,0 +1,2 @@
+check,resolution_per_um,period_um,lambda_nm,si_frac_hole,si_frac_hole_expected,si_frac_bulk_min,si_frac_outside_max
+1c,40,1.0,940.0,0.6326530612244898,0.6151548999352503,1.0,0.0

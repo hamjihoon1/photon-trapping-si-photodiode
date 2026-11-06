@@ -1,0 +1,2 @@
+mode,symmetry,resolution,lambda_nm,R,T,A,runtime_s
+symcheck,True,40,940.0,0.45946403415565346,0.33252447799160817,0.20801148785273832,218.4
