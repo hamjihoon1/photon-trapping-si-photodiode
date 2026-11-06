@@ -1,0 +1,2 @@
+mode,case,symmetry,resolution,lambda_nm,R,T,A,runtime_s
+symcheck,gao700cyl,False,30,850.0,0.4146808011444411,0.2042421935415506,0.38107700531400823,489.8
