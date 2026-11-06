@@ -11,12 +11,17 @@ meep_2d.py — 5주차: 2D 라멜라(선형 홈) 그레이팅의 수직입사 R/
   (처음 버전은 (Λ, 0, L) 로 넣어서 전파 방향 길이가 버려졌고, 입사 플럭스가 0 이 되었다 — 2026-11-03 수정)
 
 === 구조 (x–z 평면, 홈은 불변 방향으로 무한히 뻗음) ===
-  위쪽: 공기 / Si 필름: 두께 t (z ∈ [−t/2, t/2]), 윗면에 폭 w = (1−f)·Λ, 깊이 h 인 공기 홈이 주기 Λ 로 반복
+  공기 / Si 필름: 두께 t (z ∈ [−t/2, t/2]), 한쪽 면에 폭 w = (1−f)·Λ, 깊이 h 인 공기 홈이 주기 Λ 로 반복
+  groove_side (2026-11-06 추가):
+    "source" (기본값): 홈이 광원 쪽 면(z = −t/2)에 있다 → 빛이 홈 면으로 들어감 (계획서·Gao 2017 과 같은 방향)
+    "back"           : 홈이 광원 반대편 면(z = +t/2). 2026-11-06 이전 5주차 결과는 모두 이 방향
   f = Si 점유율(fill fraction).  f = 1 이고 h = 0 이면 평면 필름 → 1D 슬랩(meep_1d.py)과 같아야 함
   → 이것이 이 모듈의 첫 번째 검증 (validate_grating_2d.py 의 '평면 환원' 체크)
 
 === 경계·광원·모니터 ===
-  x : 주기 경계 (PML 을 두지 않은 방향은 MEEP 에서 주기). 수직입사이므로 Bloch k_x = 0
+  x : 주기 경계. k_point = Vector3(0,0,0) 을 반드시 넣는다 (수직입사 Bloch k_x = 0).
+      k_point 를 빼면 MEEP 기본값이 금속벽(PEC)이다. 2026-11-06 이전 코드는 k_point 가 없었으나,
+      대칭 홈 + 수직입사에서는 PEC 벽 = 주기 경계라서 값 차이는 3.3e-5 (해상도 100, 940 nm) 뿐이었다.
   z : PML(dpml) 양쪽 (MEEP 에서는 y 방향 PML). 광원은 면 광원(size = Λ) 으로 x 전체에 같은 위상의 평면파
   모니터: 플럭스 영역을 x 전체 주기(size = Λ)로 잡는다 → 전파하는 모든 회절 차수의 합이 들어간다.
 
@@ -31,8 +36,8 @@ meep_2d.py — 5주차: 2D 라멜라(선형 홈) 그레이팅의 수직입사 R/
   홈 안은 mp.air.
 
 === 검증 상태 ===
-  Claude 작업 환경에는 MEEP 이 없어 실행하지 못했다. 사용자 WSL2 에서 validate_grating_2d.py 의
-  '평면 환원' 체크(체크 1)를 먼저 통과시켜야 한다. 가짜 meep 으로는 좌표 오류를 잡을 수 없다.
+  5주차 체크 1–3 통과 (사용자 WSL2, 2026-11-06, groove_side="back" 방향, k_point 없음).
+  groove_side="source" 재계산은 진행 노트 참고.
 """
 import numpy as np
 import meep as mp
@@ -52,11 +57,15 @@ class LamellarGrating2D:
     resolution  : 1 μm 당 격자점 수
     dpml_um     : 전파 방향 PML 두께 [μm]. 5주차 PML 2배 테스트에서 바꿔 쓴다
     pad_um      : 구조와 PML 사이 공기 두께 [μm] (소스·모니터가 이 안에 들어감)
-    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위, a=1μm). 이 시간까지만 돈다
+    t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위, a=1μm). 이 시간까지만 돈다. 기본값 800 = 확정값
+    groove_side : "source" (홈이 광원 쪽 면, 기본값) 또는 "back" (광원 반대편 면, 2026-11-06 이전 방향)
     """
 
     def __init__(self, period_um, si_fill, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, t_cap=200.0):
+                 dpml_um=1.0, pad_um=1.0, t_cap=800.0, groove_side="source"):
+        if groove_side not in ("source", "back"):
+            raise ValueError(f"groove_side = {groove_side!r} 는 'source' 또는 'back' 이어야 합니다.")
+        self.side = groove_side
         if not (0.0 < si_fill <= 1.0):
             raise ValueError(f"si_fill = {si_fill} 는 (0, 1] 범위여야 합니다.")
         if depth_um < 0 or depth_um >= film_um:
@@ -99,8 +108,10 @@ class LamellarGrating2D:
         if self.h > 0 and self.f < 1.0:
             w = (1.0 - self.f) * self.P
             ext = 0.2   # 홈을 필름 위로 0.2 μm 더 뻗게 해서 윗면과 면이 겹치지 않게 한다
+            # 광원은 −z 쪽(z_src < 0). "source" 면 = z = −t/2, "back" 면 = z = +t/2
+            sgn = -1.0 if self.side == "source" else +1.0
             geom.append(mp.Block(size=mp.Vector3(w, self.h + ext, mp.inf),
-                                 center=self._pt(0, self.t / 2 - self.h / 2 + ext / 2),
+                                 center=self._pt(0, sgn * (self.t / 2 - self.h / 2 + ext / 2)),
                                  material=mp.air))
         return geom
 
@@ -110,7 +121,7 @@ class LamellarGrating2D:
                              center=self._pt(0, self.z_src),
                              size=mp.Vector3(self.P, 0, 0))]
         sim = mp.Simulation(cell_size=mp.Vector3(self.P, self.L, 0), dimensions=2,
-                            resolution=self.res,
+                            resolution=self.res, k_point=mp.Vector3(0, 0, 0),
                             boundary_layers=[mp.PML(self.dpml, direction=mp.Y)],
                             sources=sources, geometry=self.geometry(material))
         refl = sim.add_flux(self.freqs, mp.FluxRegion(center=self._pt(0, self.z_refl),

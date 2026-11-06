@@ -8,8 +8,8 @@ meep_3d.py — 6주차: 얇은 Si 슬랩 위 원기둥 나노홀 단위셀의 �
   - 단위셀 크기 무관성: P = 0.2 vs 1.0 μm 차이 6e-15
   - 홀 기하(ε 분포): 홀 구간 Si 면적비 0.595 (기대 0.615, 해상도 40 계단 근사), 바닥 꽉 참
   - 수정 이력: k_point 누락 → 금속벽 경계로 계산되던 문제 수정 (아래 _build)
-  ※ 홀 위치: 현재 홀은 z = +t/2 면, 광원은 −z 쪽 → 빛은 홀 없는 면으로 들어온다. 실제 소자(Gao 2017)처럼
-    홀 면으로 빛을 넣으려면 방향을 바꿔야 한다 (진행 노트 8절 열린 질문).
+  ※ 홀 위치: hole_side="source"(기본값, 2026-11-06 변경) → 홀이 광원 쪽 면(z = −t/2), 빛이 홀 면으로 들어감.
+    "back" 은 이전 방향(z = +t/2). 평면 환원 검증은 홀이 없어 방향과 무관.
 
 === 좌표 규약 ===
   MEEP 3D: 좌표 (x, y, z). z 가 전파 방향이다 (2D 와 달리 z 가 전파 방향이 맞다).
@@ -17,7 +17,7 @@ meep_3d.py — 6주차: 얇은 Si 슬랩 위 원기둥 나노홀 단위셀의 �
   소스·모니터: 면(size = P × P × 0). 평면파 Ex 편광, 수직입사.
 
 === 구조 ===
-  Si 필름 두께 t (z ∈ [−t/2, t/2]), 윗면에서 깊이 h 인 공기 원기둥 홀 (반경 r), 정사각 격자 주기 P.
+  Si 필름 두께 t (z ∈ [−t/2, t/2]), 광원 쪽 면(hole_side="source")에서 깊이 h 인 공기 원기둥 홀 (반경 r), 정사각 격자 주기 P.
   홀 반경 r = 0 이면 평면 필름 → 1D/2D 평면 결과와 같아야 함 (체크 1).
 
 === 계산 방식 (2D 그레이팅과 같은 MEEP 표준 R/T 절차) ===
@@ -46,10 +46,14 @@ class NanoHoleCell3D:
     dpml_um     : z 방향 PML 두께 [μm]
     pad_um      : 구조와 PML 사이 공기 두께 [μm]
     t_cap       : 소스 종료 후 계산 시간 상한 (MEEP 단위). 2D 와 같은 고정 시간 방식. 기본값 800 = 진행 노트 확정값 (2026-11-06)
+    hole_side   : "source" (홀이 광원 쪽 면 z = −t/2, 기본값) 또는 "back" (광원 반대편 면 z = +t/2)
     """
 
     def __init__(self, period_um, radius_um, depth_um, film_um, freqs, resolution,
-                 dpml_um=1.0, pad_um=1.0, t_cap=800.0):
+                 dpml_um=1.0, pad_um=1.0, t_cap=800.0, hole_side="source"):
+        if hole_side not in ("source", "back"):
+            raise ValueError(f"hole_side = {hole_side!r} 는 'source' 또는 'back' 이어야 합니다.")
+        self.side = hole_side
         if depth_um < 0 or depth_um >= film_um:
             raise ValueError("홀 깊이는 0 이상이고 필름 두께보다 작아야 합니다.")
         if radius_um < 0 or 2 * radius_um > period_um:
@@ -82,9 +86,10 @@ class NanoHoleCell3D:
         geom = [mp.Block(size=mp.Vector3(mp.inf, mp.inf, self.t),
                          center=mp.Vector3(0, 0, 0), material=material)]
         if self.r > 0 and self.h > 0:
-            ext = 0.2   # 홀을 필름 위로 0.2 μm 더 뻗게 해서 윗면과 면이 겹치지 않게 한다
+            ext = 0.2   # 홀을 필름 밖으로 0.2 μm 더 뻗게 해서 표면과 면이 겹치지 않게 한다
+            sgn = -1.0 if self.side == "source" else +1.0   # 광원은 −z 쪽
             geom.append(mp.Cylinder(radius=self.r, height=self.h + ext,
-                                    center=mp.Vector3(0, 0, self.t / 2 - self.h / 2 + ext / 2),
+                                    center=mp.Vector3(0, 0, sgn * (self.t / 2 - self.h / 2 + ext / 2)),
                                     material=mp.air))
         return geom
 

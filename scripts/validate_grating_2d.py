@@ -65,7 +65,7 @@ def tmm_flat(si, lam_nm):
     return R, T, A
 
 
-def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0, t_cap=800.0):
+def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0, t_cap=800.0, side="source"):
     """
     파장 배열 lams_nm 각각에 대해 (R, T, A) 를 계산해 (len(lams_nm), 3) 배열로 돌려준다.
     - 정규화 런은 주파수 배열당 한 번만 돈다 (LamellarGrating2D.normalize 캐시). 파장마다 다시 돌리지 않는다.
@@ -75,7 +75,9 @@ def rta_sweep(period, f, h, lams_nm, res, si, dpml=1.0, t_cap=800.0):
     """
     lams_nm = np.asarray(lams_nm, dtype=float)
     freqs = 1000.0 / lams_nm
-    g = LamellarGrating2D(period, f, h, T_UM, freqs, res, dpml_um=dpml, t_cap=t_cap)
+    if f >= 1.0 or h <= 0:
+        period = 4.0 / res   # 평면 Si 는 주기 경계(k_point=0)에서 셀 크기와 무관 → 작은 셀로 계산 (6주차 체크 1b 근거)
+    g = LamellarGrating2D(period, f, h, T_UM, freqs, res, dpml_um=dpml, t_cap=t_cap, groove_side=side)
     out = np.zeros((len(lams_nm), 3))
     for i, l in enumerate(lams_nm):
         mat = medium_from_N(si.N(l), l / 1000.0)
@@ -131,10 +133,12 @@ def check_pml(si, res):
     return rows
 
 
-def spectrum(si, periods, res, step_nm):
+def spectrum(si, periods, res, step_nm, side="source", lam_subset=None):
     lam = np.round(np.arange(LAM_MIN, LAM_MAX + 1e-9, step_nm), 3)
     if LAM_TARGET not in lam:
         lam = np.sort(np.append(lam, LAM_TARGET))
+    if lam_subset:   # 병렬 실행용: 일부 파장만 (결과 CSV 는 나중에 합친다)
+        lam = np.array([l for l in lam if any(abs(l - x) < 1e-6 for x in lam_subset)])
     rows = []
     # 평면 Si 기준선: 같은 셀·해상도에서 한 번만 계산 (f=1, h=0 이라 주기 P 와 무관한 결과)
     print(f"\n[스펙트럼 기준선] 평면 Si (MEEP), res {res}, {len(lam)} 점")
@@ -144,7 +148,7 @@ def spectrum(si, periods, res, step_nm):
     for P in periods:
         print(f"\n[스펙트럼] Λ = {P} μm, f = {F_SI}, h = {H_UM} μm, res {res}, {len(lam)} 점")
         t0 = time.time()
-        grat = rta_sweep(P, F_SI, H_UM, lam, res, si)
+        grat = rta_sweep(P, F_SI, H_UM, lam, res, si, side=side)
         print(f"  완료 ({time.time()-t0:.0f} s)")
         for i, l in enumerate(lam):
             R, T, A = grat[i]
@@ -214,6 +218,11 @@ def make_figure(spec_rows, conv_rows, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--spectrum-only", action="store_true",
+                    help="스펙트럼만 (quick 조건: Λ=0.8, 20 nm, 해상도 200). 체크 1–3 은 conv_res_t800.py 로")
+    ap.add_argument("--side", choices=["source", "back"], default="source", help="홈 위치 (기본 광원 쪽)")
+    ap.add_argument("--lams", type=float, nargs="+", default=None, help="--spectrum-only 에서 일부 파장만 [nm] (병렬 실행용)")
+    ap.add_argument("--tag", default="", help="출력 파일 꼬리표 (병렬 실행용)")
     args = ap.parse_args()
     if mp is None:
         sys.exit("MEEP(pymeep)을 import 할 수 없습니다. WSL2의 photontrap-meep 환경에서 실행하세요.")
@@ -229,10 +238,16 @@ def main():
         lam_flat = [800.0, 870.0, 940.0, 1000.0]
 
     t0 = time.time()
+    if args.spectrum_only:
+        tag = f"_{args.side}{('_' + args.tag) if args.tag else ''}{sfx}"
+        spec_rows = spectrum(si, [LAM_CONV], 200, 20.0, side=args.side, lam_subset=args.lams)
+        write_csv(os.path.join(ROOT, "results", f"week5_grating_spectrum{tag}.csv"), spec_rows)
+        print(f"\n총 실행 시간 {time.time()-t0:.0f} s")
+        return
     flat_rows = check_flat(si, res_flat, lam_flat)
     conv_rows = check_convergence(si, res_conv)
     conv_rows += check_pml(si, res_conv[-1] if args.quick else 200)
-    spec_rows = spectrum(si, periods, res_spec, step)
+    spec_rows = spectrum(si, periods, res_spec, step, side=args.side)
 
     write_csv(os.path.join(ROOT, "results", f"week5_grating_flat_check{sfx}.csv"), flat_rows)
     write_csv(os.path.join(ROOT, "results", f"week5_grating_convergence{sfx}.csv"), conv_rows)

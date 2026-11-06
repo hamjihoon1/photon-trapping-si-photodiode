@@ -12,11 +12,10 @@ validate_nanohole_3d_flat.py — 6주차 착수 전 필수: 3D 단위셀(src/mee
   P = 4/res (작은 셀) 와 P = 1.0 μm (6주차 실제 후보 주기) 의 R, T, A 차이. 기준 |ΔA| < 1e-6.
 체크 1c — 홀 기하 확인 (r = 0.35 μm, h = 0.5 μm, P = 1.0 μm, 해상도 40)
   MEEP 이 실제로 만든 ε 분포를 꺼내서
-    - 홀은 Si 윗면(z = +t/2) 깊이 h 구간에만 있어야 하고
+    - 홀은 광원 쪽 면(hole_side="source", z = −t/2) 깊이 h 구간에만 있어야 하고
     - 그 구간의 공기 면적비가 π r² / P² 와 맞아야 하며 (격자 계단 근사 오차 수 % 허용)
     - 홀 아래 Si 는 꽉 차 있어야 한다.
-  ※ meep_3d.py 의 "윗면" = z = +t/2 쪽. 광원은 z 음수 쪽(z_src < 0)에 있으므로 빛은 아래(−z)에서 들어와
-    홀 없는 면을 먼저 만나고, 홀은 투과 쪽 면에 있다. 이 방향이 의도와 맞는지는 출력에 기록하고 노트에서 판단한다.
+  ※ 광원은 z 음수 쪽(z_src < 0). 2026-11-06 부터 홀은 광원 쪽 면(z = −t/2)이 기본값 (빛이 홀 면으로 들어감).
 
 시간 상한: t_cap = 800 (진행 노트 3절 확정값, 2026-11-05)
 
@@ -125,16 +124,17 @@ def check_1c(si, res=40, P=1.0, r=0.35, h=0.5):
     si_frac = is_si.reshape(-1, nz).mean(axis=0)          # z 단면별 Si 면적비
     air_hole = 1 - np.pi * r * r / (P * P)                 # 홀 구간의 기대 Si 면적비
     inner = 1.5 / res                                      # 경계면 격자 1~2개는 섞일 수 있어 제외
-    m_hole = (z > T_UM / 2 - h + inner) & (z < T_UM / 2 - inner)
-    m_bulk = (z > -T_UM / 2 + inner) & (z < T_UM / 2 - h - inner)
+    sgn = -1.0 if cell.side == "source" else +1.0        # 홀 쪽 면 (광원은 −z 쪽)
+    zh = sgn * z                                           # 홀 쪽 면을 +t/2 로 보는 좌표
+    m_hole = (zh > T_UM / 2 - h + inner) & (zh < T_UM / 2 - inner)
+    m_bulk = (zh > -T_UM / 2 + inner) & (zh < T_UM / 2 - h - inner)
     m_out = (np.abs(z) > T_UM / 2 + inner)
     f_hole, f_bulk, f_out = si_frac[m_hole].mean(), si_frac[m_bulk].min(), si_frac[m_out].max()
-    print(f"  ε 배열 크기 {eps.shape}, ε_Si(940) = {eps_si:.3f}")
-    print(f"  홀 구간 z ∈ ({T_UM/2-h:.2f}, {T_UM/2:.2f}) Si 면적비 {f_hole:.4f} (기대 1 − πr²/P² = {air_hole:.4f})")
-    print(f"  홀 아래 Si 구간 최소 Si 면적비 {f_bulk:.4f} (기대 1),  필름 밖 최대 Si 면적비 {f_out:.4f} (기대 0)")
-    # 홀이 어느 쪽 면에 있는지: 광원(z_src) 쪽인지 투과 모니터 쪽인지
-    side = "투과 쪽(+z, 광원 반대편)" if T_UM / 2 > 0 and cell.z_src < 0 else "광원 쪽"
-    print(f"  홀 위치: z = +t/2 면 = {side}. 광원 z = {cell.z_src:.2f}")
+    lo, hi = sorted((sgn * (T_UM / 2 - h), sgn * T_UM / 2))
+    print(f"  ε 배열 크기 {eps.shape}, ε_Si(940) = {eps_si:.3f}, hole_side = {cell.side}")
+    print(f"  홀 구간 z ∈ ({lo:.2f}, {hi:.2f}) Si 면적비 {f_hole:.4f} (기대 1 − πr²/P² = {air_hole:.4f})")
+    print(f"  홀 반대쪽 Si 구간 최소 Si 면적비 {f_bulk:.4f} (기대 1),  필름 밖 최대 Si 면적비 {f_out:.4f} (기대 0)")
+    print(f"  광원 z = {cell.z_src:.2f} → 홀은 {'광원 쪽 면' if sgn < 0 else '광원 반대편 면'}")
     ok = abs(f_hole - air_hole) < 0.03 and f_bulk > 0.999 and f_out < 1e-3
     print(f"  판정 (면적비 오차 < 0.03, 바닥 꽉 참, 밖은 공기) → {'통과' if ok else '미달'}")
     return [{"check": "1c", "resolution_per_um": res, "period_um": P, "lambda_nm": LAM_TARGET,

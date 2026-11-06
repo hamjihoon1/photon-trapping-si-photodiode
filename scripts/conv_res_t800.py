@@ -44,7 +44,7 @@ CAP = 800.0
 RESES = [100, 200, 300, 400]
 RECORD_DT = 5.0          # 잔류 에너지 기록 간격 (MEEP 시간 단위)
 TMM_FLAT_A = 0.02527     # 평면 2 μm, 940 nm (진행 노트 4절)
-OUT = os.path.join(ROOT, "results", "week5_conv_res_t800.csv")
+OUT = os.path.join(ROOT, "results", "week5_conv_res_t800.csv")   # main() 에서 --side/--tag 에 따라 바뀜
 FIELDS = ["label", "resolution", "t_cap", "dpml_um", "R", "T", "A",
           "residual_ratio", "runtime_s"]
 
@@ -99,22 +99,40 @@ def save(rows):
 
 
 def main():
+    # 2026-11-06 추가 옵션:
+    #   --side source|back  : 홈 위치 (기본 source = 광원 쪽 면). back 은 이전 5주차 방향
+    #   --res 100 200 ...   : 그레이팅 해상도 목록만 직접 지정 (병렬 실행용)
+    #   --no-extra          : PML 2배·평면 기준 케이스 생략
+    #   --tag 이름          : 출력 CSV 꼬리표 (병렬 실행 시 파일이 겹치지 않게)
+    # side=source 결과 파일: results/week5_conv_res_t800_source[_tag].csv
+    import argparse
+    global OUT
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--side", choices=["source", "back"], default="source")
+    ap.add_argument("--res", type=int, nargs="+", default=None)
+    ap.add_argument("--no-extra", action="store_true")
+    ap.add_argument("--tag", default="")
+    args = ap.parse_args()
+    if args.side == "source":
+        OUT = os.path.join(ROOT, "results", f"week5_conv_res_t800_source{('_' + args.tag) if args.tag else ''}.csv")
     si = SiOpticalConstants(verbose=False)
     mat = medium_from_N(si.N(LAM), LAM / 1000.0)
     freqs = np.array([1000.0 / LAM])
 
     # (라벨, 해상도, 구조 f, 구조 h, PML 두께)
-    if "--smoke" in sys.argv:
+    if args.smoke:
         # 스모크 테스트: 해상도 100 그레이팅 한 점만 (전체 실행 전 설정 확인용)
         cases = [("grating", 100, F, H, 1.0)]
     else:
-        cases = [("grating", r, F, H, 1.0) for r in RESES]
-        cases.append(("grating_pml2", 200, F, H, 2.0))
-        cases.append(("flat", 200, 1.0, 0.0, 1.0))
+        cases = [("grating", r, F, H, 1.0) for r in (args.res or RESES)]
+        if not args.no_extra:
+            cases.append(("grating_pml2", 200, F, H, 2.0))
+            cases.append(("flat", 200, 1.0, 0.0, 1.0))
 
     done, rows = load_done()
     t_all = time.time()
-    print(f"그레이팅 Λ={P}, f={F}, h={H}, 940 nm, t_cap={CAP:.0f}")
+    print(f"그레이팅 Λ={P}, f={F}, h={H}, 940 nm, t_cap={CAP:.0f}, 홈 위치 {args.side}")
     print(f"평면 기준 TMM A = {100*TMM_FLAT_A:.3f}%", flush=True)
 
     for label, res, f, h, dpml in cases:
@@ -123,7 +141,7 @@ def main():
             print(f"[건너뜀] {label} res {res} dpml {dpml}: 이미 계산됨", flush=True)
             continue
         t0 = time.time()
-        g = LamellarGrating2D(P, f, h, T_UM, freqs, res, dpml_um=dpml, t_cap=CAP)
+        g = LamellarGrating2D(P, f, h, T_UM, freqs, res, dpml_um=dpml, t_cap=CAP, groove_side=args.side)
         R, T, A, ratio = run_case(g, mat)
         dt = time.time() - t0
         row = {"label": label, "resolution": res, "t_cap": CAP, "dpml_um": dpml,
