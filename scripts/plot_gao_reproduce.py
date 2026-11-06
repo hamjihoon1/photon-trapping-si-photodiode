@@ -82,7 +82,7 @@ def main():
             ax.plot(d[b][:, 0], 100 * d[b][:, 1], color="C0", lw=0.9, label="나노홀 (MEEP)" if b == 0 else None)
             ax.plot(d[b][:, 0], 100 * d[b][:, 2], color="0.4", lw=1.2, ls="--",
                     label=f"평면 Si {T_OF[c]:g} μm (TMM)" if b == 0 else None)
-        ax.legend(fontsize=8, loc="upper right")
+        ax.legend(fontsize=8, loc="best", framealpha=0.9)
         r = [x for x in table if x["case"] == c and x["resolution"] == res][0]
         ax.set_title(f"{LABEL[c]}  (해상도 {res}) — 800–900 nm 평균 {100*r['A_800_900']:.1f}% "
                      f"(평면 대비 {r['enhancement']:.1f}배)", fontsize=9.5)
